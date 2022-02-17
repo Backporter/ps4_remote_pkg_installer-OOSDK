@@ -11,7 +11,7 @@
 #include <orbis/ShellUIUtil.h>
 #include <orbis/userservice.h>
 
-#define SERVER_PORT (12800)
+#define SERVER_PORT (12801)
 
 int sceUserMainThreadPriority = 700;
 
