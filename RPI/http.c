@@ -14,6 +14,15 @@
 
 #define USER_AGENT "Download/1.00"
 
+typedef enum SceHttpsFlag {
+	SCE_HTTPS_FLAG_SERVER_VERIFY        = (0x01U),
+	SCE_HTTPS_FLAG_CLIENT_VERIFY        = (0x02U),
+	SCE_HTTPS_FLAG_CN_CHECK             = (0x04U),
+	SCE_HTTPS_FLAG_NOT_AFTER_CHECK      = (0x08U),
+	SCE_HTTPS_FLAG_NOT_BEFORE_CHECK     = (0x10U),
+	SCE_HTTPS_FLAG_KNOWN_CA_CHECK       = (0x20U)
+} SceHttpsFlag;
+
 struct download_file_cb_args {
 	uint8_t* data;
 	uint64_t data_size;
@@ -127,7 +136,7 @@ bool http_get_file_size(const char* url, uint64_t* total_size) {
 	}
 
 							
-	ret = do_request(url, ORBIS_HTTP_METHOD_GET, NULL, 0, NULL, 0, &download_file_cb, &args);
+	ret = do_request(url, ORBIS_METHOD_GET, NULL, 0, NULL, 0, &download_file_cb, &args);
 	if (ret) {
 		goto err;
 	}
@@ -182,7 +191,7 @@ bool http_download_file(const char* url, uint8_t** data, uint64_t* data_size, ui
 		++header_count;
 	}
 
-	ret = do_request(url, ORBIS_HTTP_METHOD_GET, NULL, 0, headers, header_count, &download_file_cb, &args);
+	ret = do_request(url, ORBIS_METHOD_GET, NULL, 0, headers, header_count, &download_file_cb, &args);
 	if (ret) {
 		goto err_data_free;
 	}
@@ -353,7 +362,7 @@ static int download_file_cb(void* arg, int req_id, int status_code, uint64_t con
 	}
 
 	if (!is_good_status(status_code)) {
-		ret = ORBIS_HTTP_ERROR_NOT_FOUND;
+		ret = 404;
 		goto err;
 	}
 
@@ -452,9 +461,9 @@ static int do_request(const char* url, int method, const void* data, size_t data
 	}
 	req_id = ret;
 
-	ssl_flags =  ORBIS_HTTPS_FLAG_SERVER_VERIFY   | ORBIS_HTTPS_FLAG_CLIENT_VERIFY;
-	ssl_flags |= ORBIS_HTTPS_FLAG_CN_CHECK		  | ORBIS_HTTPS_FLAG_KNOWN_CA_CHECK;
-	ssl_flags |= ORBIS_HTTPS_FLAG_NOT_AFTER_CHECK | ORBIS_HTTPS_FLAG_NOT_BEFORE_CHECK;
+	ssl_flags = SCE_HTTPS_FLAG_SERVER_VERIFY | SCE_HTTPS_FLAG_CLIENT_VERIFY;
+	ssl_flags |= SCE_HTTPS_FLAG_CN_CHECK | SCE_HTTPS_FLAG_KNOWN_CA_CHECK;
+	ssl_flags |= SCE_HTTPS_FLAG_NOT_AFTER_CHECK | SCE_HTTPS_FLAG_NOT_BEFORE_CHECK;
 
 	ret = sceHttpsDisableOption(tpl_id, ssl_flags);
 	if (ret) {
