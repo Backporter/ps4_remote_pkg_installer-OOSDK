@@ -194,8 +194,11 @@ static int event_handler(sb_Event* e) {
 		ret = SB_RES_OK;
 		goto done;
 	}
-
-	if (strcasecmp(e->method, "GET") == 0) {
+	if (strcasecmp(e->method, "OPTIONS") == 0) {
+			kick_result_header_json(e->stream);
+			ret = SB_RES_OK;
+			goto done;
+	} else if (strcasecmp(e->method, "GET") == 0) {
 		descs = s_get_handlers;
 		count = ARRAY_SIZE(s_get_handlers);
 	} else if (strcasecmp(e->method, "POST") == 0) {
@@ -1479,6 +1482,8 @@ static void kick_error(sb_Stream* s, int code, const char* title, const char* er
 	sb_send_status(s, code, title);
 	sb_send_header(s, "Content-Type", "application/json");
 	sb_send_header(s, "Access-Control-Allow-Origin", "*");
+	sb_send_header(s, "Access-Control-Allow-Headers", "*");
+	sb_send_header(s, "Access-Control-Allow-Methods", "*");
 	sb_send_header(s, "Connection", "close");
 
 	if (!http_escape_json_string(escaped_error, sizeof(escaped_error), error)) {
@@ -1492,6 +1497,8 @@ static void kick_result_header_json(sb_Stream* s) {
 	sb_send_status(s, 200, "OK");
 	sb_send_header(s, "Content-Type", "application/json");
 	sb_send_header(s, "Access-Control-Allow-Origin", "*");
+	sb_send_header(s, "Access-Control-Allow-Headers", "*");
+	sb_send_header(s, "Access-Control-Allow-Methods", "*");
 	sb_send_header(s, "Connection", "close");
 }
 
@@ -1549,8 +1556,8 @@ static void cleanup_temp_files(void) {
 						goto err;
 					}
 
-					if (timespec_compare(&now, &stat_buf.st_atim) >= 0) {
-						timespec_sub(&diff, &now, &stat_buf.st_atim);
+					if (timespec_compare(&now, &stat_buf.st_atime) >= 0) {
+						timespec_sub(&diff, &now, &stat_buf.st_atime);
 
 						if (diff.tv_sec >= (long)CLEANUP_DAY_COUNT * 24 * 60 * 60) {
 							unlink(full_path);
