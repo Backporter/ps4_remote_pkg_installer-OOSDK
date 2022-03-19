@@ -13,6 +13,8 @@
 #include <stdarg.h>
 #include <stdbool.h>
 #include <time.h>
+#include <stdio.h>
+#include <pthread.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -24,7 +26,41 @@ typedef struct sb_Server  sb_Server;
 typedef struct sb_Stream  sb_Stream;
 typedef struct sb_Event   sb_Event;
 typedef struct sb_Options sb_Options;
+typedef struct sb_Buffer sb_Buffer;
 typedef int (*sb_Handler)(sb_Event*);
+typedef int sb_Socket;
+
+struct sb_Buffer { char *s; size_t len, cap; };
+
+struct sb_Server {
+  sb_Stream *streams;         /* Linked list of all streams */
+  sb_Handler handler;         /* Event handler callback function */
+  sb_Socket sockfd;           /* Listeneing server socket */
+  void *udata;                /* User data value passed to all events */
+  time_t now;                 /* The current time */
+  time_t timeout;             /* Stream no-activity timeout */
+  time_t max_lifetime;        /* Maximum time a stream can exist */
+  size_t max_request_size;    /* Maximum request size in bytes */
+  pthread_mutex_t stream_mtx; /* Mutex to lock stream access */
+};
+
+struct sb_Stream {
+  int state;                  /* Current state of the stream */
+  sb_Server *server;          /* The server object which owns this stream */
+  char address[46];           /* Remote IP address */
+  time_t init_time;           /* Time the stream was created */
+  time_t last_activity;       /* Time of Last I/O activity on the stream */
+  size_t expected_recv_len;   /* Expected length of the stream's request */
+  size_t data_idx;            /* Index of data section in recv_buf */
+  sb_Socket sockfd;           /* Socket for this streams connection */
+  sb_Buffer recv_buf;         /* Data received from client */
+  sb_Buffer send_buf;         /* Data waiting to be sent to client */
+  int send_fd;                /* File descriptor currently being sent to client */
+  pthread_t thr;              /* Processing thread */
+  sb_Stream *next;            /* Next stream in linked list */
+  sb_Stream *prev;            /* Previous stream in linked list */
+  FILE *send_fp;              /* File currently being sent to client */
+};
 
 struct sb_Event {
   int type;
@@ -55,6 +91,7 @@ enum {
   SB_EBADRESULT   = -5,
   SB_ECANTOPEN    = -6,
   SB_ENOTFOUND    = -7,
+  SB_EFDTOOBIG    = -8
 };
 
 enum {
@@ -79,12 +116,9 @@ int sb_write(sb_Stream *st, const void *data, size_t len);
 int sb_vwritef(sb_Stream *st, const char *fmt, va_list args);
 int sb_writef(sb_Stream *st, const char *fmt, ...);
 int sb_get_header(sb_Stream *st, const char *field, char *dst, size_t len);
-int sb_get_var_ex(sb_Stream *st, const char *name, char *dst, size_t len, bool from_data_only);
 int sb_get_var(sb_Stream *st, const char *name, char *dst, size_t len);
-char *sb_get_content_data(sb_Stream *st, size_t *len);
 int sb_get_cookie(sb_Stream *st, const char *name, char *dst, size_t len);
 const void *sb_get_multipart(sb_Stream *st, const char *name, size_t *len);
-time_t sb_stream_get_init_time(sb_Stream *st);
 
 #ifdef __cplusplus
 } // extern "C"

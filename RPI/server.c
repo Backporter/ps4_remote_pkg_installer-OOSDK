@@ -5,6 +5,8 @@
 #include "http.h"
 #include "util.h"
 
+#include <ctype.h>
+#include <stdlib.h>
 #include <dirent.h>
 #include <orbis/libkernel.h>
 #include <fcntl.h>
@@ -62,6 +64,7 @@ static bool handle_api_find_task(sb_Stream* s, const char* method, const char* p
 
 static bool handle_static(sb_Stream* s, const char* method, const char* path, char* in_data, size_t in_size);
 
+static void set_cors_header(sb_Stream* s);
 static void kick_error(sb_Stream* s, int code, const char* title, const char* error);
 static void kick_result_header_json(sb_Stream* s);
 static void kick_error_json(sb_Stream* s, int code);
@@ -69,8 +72,23 @@ static void kick_success_json(sb_Stream* s);
 
 static void cleanup_temp_files(void);
 
+static char* encodeURI(char *src);
+
 static const struct handler_desc s_get_handlers[] = {
 	{ "/static/", &handle_static, true },
+	{ "/api/install", &handle_api_install, false },
+	{ "/api/uninstall_game", &handle_api_uninstall_game, false },
+	{ "/api/uninstall_ac", &handle_api_uninstall_ac, false },
+	{ "/api/uninstall_patch", &handle_api_uninstall_patch, false },
+	{ "/api/uninstall_theme", &handle_api_uninstall_theme, false },
+	{ "/api/is_exists", &handle_api_is_exists, false },
+	{ "/api/start_task", &handle_api_start_task, false },
+	{ "/api/stop_task", &handle_api_stop_task, false },
+	{ "/api/pause_task", &handle_api_pause_task, false },
+	{ "/api/resume_task", &handle_api_resume_task, false },
+	{ "/api/unregister_task", &handle_api_unregister_task, false },
+	{ "/api/get_task_progress", &handle_api_get_task_progress, false },
+	{ "/api/find_task", &handle_api_find_task, false },
 };
 static const struct handler_desc s_post_handlers[] = {
 	{ "/api/install", &handle_api_install, false },
@@ -84,9 +102,6 @@ static const struct handler_desc s_post_handlers[] = {
 	{ "/api/pause_task", &handle_api_pause_task, false },
 	{ "/api/resume_task", &handle_api_resume_task, false },
 	{ "/api/unregister_task", &handle_api_unregister_task, false },
-#if 0
-	{ "/api/reregister_task_patch", &handle_api_reregister_task_patch, false },
-#endif
 	{ "/api/get_task_progress", &handle_api_get_task_progress, false },
 	{ "/api/find_task", &handle_api_find_task, false },
 };
@@ -181,45 +196,61 @@ void server_stop(void) {
 	s_server_started = false;
 }
 
+char *sb_get_query_data(sb_Stream *st, const char *name) {
+  char *data;
+  size_t len = st->recv_buf.len;
+
+  data = (char *)malloc(sizeof(char) * 512);
+  sb_get_var(st, name, data, 512);
+  return data;
+}
+
+char *sb_get_content_data(sb_Stream *st) {
+  return st->recv_buf.s + st->data_idx;
+}
+
 static int event_handler(sb_Event* e) {
 	const struct handler_desc* descs = NULL;
 	handler_cb* handler = NULL;
-	char* in_data;
-	size_t in_size;
 	size_t count;
 	size_t i;
 	int ret;
 
-	if (e->type != SB_EV_REQUEST) {
+	sb_Stream *st = e->stream;
+	int type = e->type;
+	const char *path = e->path;
+	const char *method = e->method;
+
+	if (type != SB_EV_REQUEST) {
 		ret = SB_RES_OK;
 		goto done;
 	}
-	if (strcasecmp(e->method, "OPTIONS") == 0) {
-			kick_result_header_json(e->stream);
+	if (strcasecmp(method, "OPTIONS") == 0) {
+			kick_result_header_json(st);
 			ret = SB_RES_OK;
 			goto done;
-	} else if (strcasecmp(e->method, "GET") == 0) {
+	} else if (strcasecmp(method, "GET") == 0) {
 		descs = s_get_handlers;
 		count = ARRAY_SIZE(s_get_handlers);
-	} else if (strcasecmp(e->method, "POST") == 0) {
+	} else if (strcasecmp(method, "POST") == 0) {
 		descs = s_post_handlers;
 		count = ARRAY_SIZE(s_post_handlers);
 	}
 	if (!descs) {
 bad_request:
-		kick_error(e->stream, 400, "Bad request", "Unsupported method");
+		kick_error(st, 400, "Bad request", "Unsupported method");
 		ret = SB_RES_OK;
 		goto done;
 	}
 
 	for (i = 0; i < count; ++i) {
 		if (descs[i].need_partial_match) {
-			if (strstr(e->path, descs[i].path) == e->path) {
+			if (strstr(path, descs[i].path) == path) {
 				handler = descs[i].handler;
 				break;
 			}
 		} else {
-			if (strcmp(e->path, descs[i].path) == 0) {
+			if (strcmp(path, descs[i].path) == 0) {
 				handler = descs[i].handler;
 				break;
 			}
@@ -229,9 +260,14 @@ bad_request:
 		goto bad_request;
 	}
 
-	in_data = sb_get_content_data(e->stream, &in_size);
+  char *data = NULL;
+  if (strcmp(method, "POST") == 0) {
+    data = sb_get_content_data(st);
+  } else if (strcmp(method, "GET") == 0) {
+    data = sb_get_query_data(st, "data");
+  }
 
-	(*handler)(e->stream, e->method, e->path, in_data, in_size);
+	(*handler)(st, method, path, data, sizeof(data));
 
 	ret = SB_RES_OK;
 
@@ -326,11 +362,14 @@ static inline bool handle_api_install_direct(sb_Stream* s, const json_t* root) {
 			THROW_ERROR("Unable to unescape element value of parameter '%s'.", "packages");
 		}
 
-		piece_urls[i++] = unescaped_url;
+		char *dst = encodeURI(unescaped_url);
+
+		piece_urls[i++] = dst;
 		unescaped_url = NULL;
+		dst = NULL;
 	}
 
-	snprintf(tmp_name, sizeof(tmp_name), "tmp_%" PRIxMAX, (uintmax_t)sb_stream_get_init_time(s) ^ (uint32_t)(uintptr_t)s);
+	snprintf(tmp_name, sizeof(tmp_name), "tmp_%" PRIxMAX, (uintmax_t)(s->init_time) ^ (uint32_t)(uintptr_t)s);
 
 	snprintf(ref_pkg_json_path, sizeof(ref_pkg_json_path), "%s/%s.json", s_work_dir, tmp_name);
 	snprintf(param_sfo_path, sizeof(param_sfo_path), "%s/%s.sfo", s_work_dir, tmp_name);
@@ -515,7 +554,7 @@ static inline bool handle_api_install_ref_pkg_url(sb_Stream* s, const json_t* ro
 		THROW_ERROR("Unable to extract pieces URLs for %s'.", unescaped_url);
 	}
 
-	snprintf(tmp_name, sizeof(tmp_name), "tmp_%" PRIxMAX, (uintmax_t)sb_stream_get_init_time(s) ^ (uint32_t)(uintptr_t)s);
+	snprintf(tmp_name, sizeof(tmp_name), "tmp_%" PRIxMAX, (uintmax_t)(s->init_time) ^ (uint32_t)(uintptr_t)s);
 
 	snprintf(ref_pkg_json_path, sizeof(ref_pkg_json_path), "%s/%s.json", s_work_dir, tmp_name);
 	snprintf(param_sfo_path, sizeof(param_sfo_path), "%s/%s.sfo", s_work_dir, tmp_name);
@@ -1472,6 +1511,13 @@ done:
 	return (ret == SB_RES_OK);
 }
 
+static void set_cors_header(sb_Stream* s) {
+	sb_send_header(s, "Content-Type", "application/json");
+	sb_send_header(s, "Access-Control-Allow-Origin", "*");
+	sb_send_header(s, "Access-Control-Allow-Methods", "*");
+	sb_send_header(s, "Access-Control-Allow-Headers", "*");
+}
+
 static void kick_error(sb_Stream* s, int code, const char* title, const char* error) {
 	char escaped_error[1024];
 
@@ -1480,10 +1526,7 @@ static void kick_error(sb_Stream* s, int code, const char* title, const char* er
 	}
 
 	sb_send_status(s, code, title);
-	sb_send_header(s, "Content-Type", "application/json");
-	sb_send_header(s, "Access-Control-Allow-Origin", "*");
-	sb_send_header(s, "Access-Control-Allow-Headers", "*");
-	sb_send_header(s, "Access-Control-Allow-Methods", "*");
+	set_cors_header(s);
 	sb_send_header(s, "Connection", "close");
 
 	if (!http_escape_json_string(escaped_error, sizeof(escaped_error), error)) {
@@ -1495,10 +1538,7 @@ static void kick_error(sb_Stream* s, int code, const char* title, const char* er
 
 static void kick_result_header_json(sb_Stream* s) {
 	sb_send_status(s, 200, "OK");
-	sb_send_header(s, "Content-Type", "application/json");
-	sb_send_header(s, "Access-Control-Allow-Origin", "*");
-	sb_send_header(s, "Access-Control-Allow-Headers", "*");
-	sb_send_header(s, "Access-Control-Allow-Methods", "*");
+	set_cors_header(s);
 	sb_send_header(s, "Connection", "close");
 }
 
@@ -1577,4 +1617,23 @@ err:
 			EPRINTF("sceKernelClose failed: 0x%08X\n", ret);
 		}
 	}
+}
+
+/* Converts an integer value to its hex character*/
+char to_hex(char code) {
+  static char hex[] = "0123456789abcdef";
+  return hex[code & 15];
+}
+
+char *encodeURI(char *str) {
+  char *pstr = str, *buf = malloc(strlen(str) * 3 + 1), *pbuf = buf;
+  while (*pstr) {
+    if (isalnum(*pstr) || *pstr == '-' || *pstr == '_' || *pstr == '.' || *pstr == '~' || *pstr == '+' || *pstr == ':' || *pstr == '/' || *pstr == '@') 
+      *pbuf++ = *pstr;
+    else 
+      *pbuf++ = '%', *pbuf++ = to_hex(*pstr >> 4), *pbuf++ = to_hex(*pstr & 15);
+    pstr++;
+  }
+  *pbuf = '\0';
+  return buf;
 }
