@@ -156,6 +156,7 @@ int main(int argc, const char* const argv[])
 	}
 
 	printf("Listening for incoming connections on %s:%d...\n", ip_address, SERVER_PORT);
+	Notify("RPI\nIP:     %s\nPort: %i", ip_address, SERVER_PORT);
 	if (!server_listen()) {
 		goto err_server_stop;
 	}

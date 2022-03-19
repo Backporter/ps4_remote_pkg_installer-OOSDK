@@ -17,7 +17,7 @@ void Notify(const char* FMT, ...)
 	Buffer.unk3 = 0;
 	Buffer.useIconImageUri = 1;
 	Buffer.targetId = -1;
-	strcpy(Buffer.iconUri, "cxml://psnotification/tex_icon_champions_league");
+	strcpy(Buffer.iconUri, "cxml://psnotification/tex_icon_system");
 
 	sceKernelSendNotificationRequest(0, &Buffer, 3120, 0);
 }
