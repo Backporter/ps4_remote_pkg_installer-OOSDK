@@ -1,6 +1,6 @@
 # Package metadata.
-TITLE       := Remote Package Installer (OOSDK Port)
-VERSION     := 1.01
+TITLE       := RPI
+VERSION     := 1.02
 TITLE_ID    := KPBR01111
 CONTENT_ID  := IV0000-KPBR01111_00-AAAAAAAAAAAAAAAA
 
