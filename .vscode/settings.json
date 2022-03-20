@@ -1,0 +1,25 @@
+{
+  "C_Cpp.intelliSenseEngine": "Default",
+  "files.associations": {
+    "*.ejs": "html",
+    "*.cjson": "jsonc",
+    "*.wxss": "css",
+    "*.wxs": "javascript",
+    "stdlib.h": "c",
+    "dirent.h": "c",
+    "libkernel.h": "c",
+    "common.h": "c",
+    "stdarg.h": "c",
+    "stdbool.h": "c",
+    "stddef.h": "c",
+    "stdint.h": "c",
+    "errno.h": "c",
+    "inttypes.h": "c",
+    "syscalls.h": "c",
+    "unistd.h": "c",
+    "kputil.h": "c",
+    "http.h": "c",
+    "server.h": "c",
+    "net.h": "c"
+  },
+}
