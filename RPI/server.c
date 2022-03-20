@@ -1,17 +1,16 @@
+#include <ctype.h>
+#include <stdlib.h>
+#include <orbis/libkernel.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+
 #include "server.h"
 #include "installer.h"
 #include "pkg.h"
 #include "sfo.h"
 #include "http.h"
 #include "util.h"
-
-#include <ctype.h>
-#include <stdlib.h>
-#include <dirent.h>
-#include <orbis/libkernel.h>
-#include <fcntl.h>
-#include <sys/stat.h>
-
+#include "dirent.h"
 #include "sandbird.h"
 #include "tiny-json.h"
 
@@ -1584,9 +1583,11 @@ static void cleanup_temp_files(void) {
 		}
 		entry = (struct dirent*)buf;
 		
-		while (entry->d_fileno != DT_UNKNOWN)
+		// #define DT_UNKNOWN 0
+		while (entry->d_fileno != 0)
 		{
-			if (strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0 && entry->d_type == DT_REG) {
+			// #define DT_REG 8
+			if (strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0 && entry->d_type == 8) {
 				snprintf(full_path, sizeof(full_path), "%s/%s", s_work_dir, entry->d_name);
 
 				if (starts_with(entry->d_name, "tmp_") && (ends_with(entry->d_name, ".json") || ends_with(entry->d_name, ".sfo") || ends_with(entry->d_name, ".png"))) {

@@ -1,8 +1,8 @@
 #pragma once
 
-#include "common.h"
-
 #include <orbis/libkernel.h>
+
+#include "common.h"
 
 #define DLSYM_MANGLED_NAME 0x1
 
