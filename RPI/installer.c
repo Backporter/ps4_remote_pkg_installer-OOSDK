@@ -10,22 +10,24 @@
 #include <orbis/bgft.h>
 #include <sys/param.h>
 
-// define them here and import the address later
-int(*sceBgftDebugDownloadRegisterPkg)(OrbisBgftDownloadParam* params, OrbisBgftTaskId* taskId);
-int(*sceBgftDownloadGetProgress)(OrbisBgftTaskId taskId, OrbisBgftTaskProgress* progress);
-int(*sceBgftDownloadPauseTask)(OrbisBgftTaskId taskId);
-int(*sceBgftDownloadRegisterTask)(OrbisBgftDownloadParam* params, OrbisBgftTaskId* taskId);
-int(*sceBgftDownloadReregisterTaskPatch)(OrbisBgftTaskId oldTaskId, OrbisBgftTaskId* newTaskId);
-int(*sceBgftDownloadResumeTask)(OrbisBgftTaskId taskId);
-int(*sceBgftDownloadStartTask)(OrbisBgftTaskId taskId);
-int(*sceBgftDownloadStopTask)(OrbisBgftTaskId taskId);
-int(*sceBgftDownloadUnregisterTask)(OrbisBgftTaskId taskId);
-int(*sceBgftFinalize)();
-int(*sceBgftInitialize)(OrbisBgftInitParams* params);
-
 #define _NDBG 
 #define BGFT_HEAP_SIZE (1 * 1024 * 1024)
 #define WAIT_TIME (UINT64_C(5) * 1000 * 1000) /* 5 secs */
+
+#define SCE_BGFT_INVALID_TASK_ID (-1)
+#define SCE_BGFT_ERROR_SAME_APPLICATION_ALREADY_INSTALLED (0x80990088)
+
+enum bgft_task_option_t {
+	BGFT_TASK_OPTION_NONE = 0x0,
+	BGFT_TASK_OPTION_DELETE_AFTER_UPLOAD = 0x1,
+	BGFT_TASK_OPTION_INVISIBLE = 0x2,
+	BGFT_TASK_OPTION_ENABLE_PLAYGO = 0x4,
+	BGFT_TASK_OPTION_FORCE_UPDATE = 0x8,
+	BGFT_TASK_OPTION_REMOTE = 0x10,
+	BGFT_TASK_OPTION_COPY_CRASH_REPORT_FILES = 0x20,
+	BGFT_TASK_OPTION_DISABLE_INSERT_POPUP = 0x40,
+	BGFT_TASK_OPTION_DISABLE_CDN_QUERY_PARAM = 0x10000,
+};
 
 static OrbisBgftInitParams s_bgft_init_params;
 
@@ -292,49 +294,6 @@ err:
 bool bgft_init(void) 
 {
 	int ret;
-	int32_t handle =  sceKernelLoadStartModule("/system/common/lib/libSceBgft.sprx", NULL, NULL, NULL, NULL, NULL);
-	KernelPrintOut("sceKernelLoadStartModule returned 0x%lx\n", handle);
-
-	if (handle > 0)
-	{
-		if ((ret = sceKernelDlsym(handle, "sceBgftServiceIntDebugDownloadRegisterPkg", (void**)&sceBgftDebugDownloadRegisterPkg) != 0))
-			SafeExit("sceKernelDlsym returned 0x%lx\n", ret);
-
-		if ((ret = sceKernelDlsym(handle, "sceBgftServiceIntDownloadGetProgress", (void**)&sceBgftDownloadGetProgress) != 0))
-			SafeExit("sceKernelDlsym returned 0x%lx\n", ret);
-
-		if ((ret = sceKernelDlsym(handle, "sceBgftServiceIntDownloadPauseTask", (void**)&sceBgftDownloadPauseTask) != 0))
-			SafeExit("sceKernelDlsym returned 0x%lx\n", ret);
-
-		if ((ret = sceKernelDlsym(handle, "sceBgftServiceDownloadRegisterTask", (void**)&sceBgftDownloadRegisterTask) != 0))
-			SafeExit("sceKernelDlsym returned 0x%lx\n", ret);
-
-		if ((ret = sceKernelDlsym(handle, "sceBgftServiceIntDownloadReregisterTaskPatch", (void**)&sceBgftDownloadReregisterTaskPatch) != 0))
-			SafeExit("sceKernelDlsym returned 0x%lx\n", ret);
-
-		if ((ret = sceKernelDlsym(handle, "sceBgftServiceIntDownloadResumeTask", (void**)&sceBgftDownloadResumeTask) !=  0))
-			SafeExit("sceKernelDlsym returned 0x%lx\n", ret);
-
-		if ((ret = sceKernelDlsym(handle, "sceBgftServiceIntDownloadStartTask", (void**)&sceBgftDownloadStartTask) != 0))
-			SafeExit("sceKernelDlsym returned 0x%lx\n", ret);
-
-		if ((ret = sceKernelDlsym(handle, "sceBgftServiceIntDownloadStopTask", (void**)&sceBgftDownloadStopTask) != 0))
-			SafeExit("sceKernelDlsym returned 0x%lx\n", ret);
-
-		if ((ret = sceKernelDlsym(handle, "sceBgftServiceIntDownloadUnregisterTask", (void**)&sceBgftDownloadUnregisterTask) != 0))
-			SafeExit("sceKernelDlsym returned 0x%lx\n", ret);
-
-		if ((ret = sceKernelDlsym(handle, "sceBgftServiceTerm", (void**)&sceBgftFinalize) != 0))
-			SafeExit("sceKernelDlsym returned 0x%lx\n", ret);
-
-		if ((ret = sceKernelDlsym(handle, "sceBgftServiceInit", (void**)&sceBgftInitialize)!= 0))
-			SafeExit("sceKernelDlsym returned 0x%lx\n", ret);
-
-	}
-	else
-	{
-		SafeExit("Failed to load libSceBgft 0x%lx\n", handle);
-	}
 
 	if (s_bgft_initialized) {
 		goto done;
@@ -351,9 +310,9 @@ bool bgft_init(void)
 		memset(s_bgft_init_params.heap, 0, s_bgft_init_params.heapSize);
 	}
 
-	ret = sceBgftInitialize(&s_bgft_init_params);
+	ret = sceBgftServiceIntInit(&s_bgft_init_params);
 	if (ret) {
-		EPRINTF("sceBgftInitialize failed: 0x%08X\n", ret);
+		EPRINTF("sceBgftServiceIntInit failed: 0x%08X\n", ret);
 		goto err_bgft_heap_free;
 	}
 
@@ -384,9 +343,9 @@ void bgft_fini(void) {
 		return;
 	}
 
-	ret = sceBgftFinalize();
+	ret = sceBgftServiceIntTerm();
 	if (ret) {
-		EPRINTF("sceBgftFinalize failed: 0x%08X\n", ret);
+		EPRINTF("sceBgftServiceIntTerm failed: 0x%08X\n", ret);
 	}
 
 	if (s_bgft_init_params.heap) {
@@ -454,25 +413,24 @@ bool bgft_download_register_package_task(const char* content_id, const char* con
 		params.packageSize = package_size;
 	}
 
-	task_id = ORBIS_BGFT_INVALID_TASK_ID;
+	task_id = SCE_BGFT_INVALID_TASK_ID;
 
 	if (!is_patch) {
-		ret = sceBgftDownloadRegisterTask(&params, &task_id);
-		//ret = sceBgftDownloadRegisterTaskStoreWithErrorInfo(&params, &task_id, &error_info);
+		ret = sceBgftServiceIntDownloadRegisterTask(&params, &task_id);
 	}
 	else {
-		ret = sceBgftDebugDownloadRegisterPkg(&params, &task_id);
+		ret = sceBgftServiceIntDebugDownloadRegisterPkg(&params, &task_id);
 	}
 	if (ret) {
 		if (error) {
 			*error = ret;
 		}
-		if (ret == ORBIS_BGFT_ERROR_SAME_APPLICATION_ALREADY_INSTALLED) {
+		if (ret == SCE_BGFT_ERROR_SAME_APPLICATION_ALREADY_INSTALLED) {
 			task_id = -1;
 			//printf("Package already installed.\n");
 			goto done;
 		}
-		EPRINTF("sceBgftDownloadRegisterTask failed: 0x%08X\n", ret);
+		EPRINTF("sceBgftServiceIntDownloadRegisterTask failed: 0x%08X\n", ret);
 		goto err;
 	}
 
@@ -506,12 +464,12 @@ bool bgft_download_start_task(int task_id, int* error) {
 		goto err;
 	}
 
-	ret = sceBgftDownloadStartTask((OrbisBgftTaskId)task_id);
+	ret = sceBgftServiceDownloadStartTask((OrbisBgftTaskId)task_id);
 	if (ret) {
 		if (error) {
 			*error = ret;
 		}
-		EPRINTF("sceBgftDownloadStartTask failed: 0x%08X\n", ret);
+		EPRINTF("sceBgftServiceDownloadStartTask failed: 0x%08X\n", ret);
 		goto err;
 	}
 
@@ -540,12 +498,12 @@ bool bgft_download_stop_task(int task_id, int* error) {
 		goto err;
 	}
 
-	ret = sceBgftDownloadStopTask((OrbisBgftTaskId)task_id);
+	ret = sceBgftServiceDownloadStopTask((OrbisBgftTaskId)task_id);
 	if (ret) {
 		if (error) {
 			*error = ret;
 		}
-		EPRINTF("sceBgftDownloadStopTask failed: 0x%08X\n", ret);
+		EPRINTF("sceBgftServiceDownloadStopTask failed: 0x%08X\n", ret);
 		goto err;
 	}
 
@@ -574,12 +532,12 @@ bool bgft_download_pause_task(int task_id, int* error) {
 		goto err;
 	}
 
-	ret = sceBgftDownloadPauseTask((OrbisBgftTaskId)task_id);
+	ret = sceBgftServiceDownloadPauseTask((OrbisBgftTaskId)task_id);
 	if (ret) {
 		if (error) {
 			*error = ret;
 		}
-		EPRINTF("sceBgftDownloadPauseTask failed: 0x%08X\n", ret);
+		EPRINTF("sceBgftServiceDownloadPauseTask failed: 0x%08X\n", ret);
 		goto err;
 	}
 
@@ -608,12 +566,12 @@ bool bgft_download_resume_task(int task_id, int* error) {
 		goto err;
 	}
 
-	ret = sceBgftDownloadResumeTask((OrbisBgftTaskId)task_id);
+	ret = sceBgftServiceDownloadResumeTask((OrbisBgftTaskId)task_id);
 	if (ret) {
 		if (error) {
 			*error = ret;
 		}
-		EPRINTF("sceBgftDownloadResumeTask failed: 0x%08X\n", ret);
+		EPRINTF("sceBgftServiceDownloadResumeTask failed: 0x%08X\n", ret);
 		goto err;
 	}
 
@@ -642,12 +600,12 @@ bool bgft_download_unregister_task(int task_id, int* error) {
 		goto err;
 	}
 
-	ret = sceBgftDownloadUnregisterTask((OrbisBgftTaskId)task_id);
+	ret = sceBgftServiceIntDownloadUnregisterTask((OrbisBgftTaskId)task_id);
 	if (ret) {
 		if (error) {
 			*error = ret;
 		}
-		EPRINTF("sceBgftDownloadUnregisterTask failed: 0x%08X\n", ret);
+		EPRINTF("sceBgftServiceIntDownloadUnregisterTask failed: 0x%08X\n", ret);
 		goto err;
 	}
 
@@ -677,13 +635,13 @@ bool bgft_download_reregister_task_patch(int old_task_id, int* new_task_id, int*
 		goto err;
 	}
 
-	tmp_id = ORBIS_BGFT_INVALID_TASK_ID;
-	ret = sceBgftDownloadReregisterTaskPatch((OrbisBgftTaskId)old_task_id, &tmp_id);
+	tmp_id = SCE_BGFT_INVALID_TASK_ID;
+	ret = sceBgftServiceIntDownloadReregisterTaskPatch((OrbisBgftTaskId)old_task_id, &tmp_id);
 	if (ret) {
 		if (error) {
 			*error = ret;
 		}
-		EPRINTF("sceBgftDownloadReregisterTaskPatch failed: 0x%08X\n", ret);
+		EPRINTF("sceBgftServiceIntDownloadReregisterTaskPatch failed: 0x%08X\n", ret);
 		goto err;
 	}
 
@@ -725,12 +683,12 @@ bool bgft_download_get_task_progress(int task_id, struct bgft_download_task_prog
 	}
 
 	memset(&tmp_progress_info, 0, sizeof(tmp_progress_info));
-	ret = sceBgftDownloadGetProgress((OrbisBgftTaskId)task_id, &tmp_progress_info);
+	ret = sceBgftServiceDownloadGetProgress((OrbisBgftTaskId)task_id, &tmp_progress_info);
 	if (ret) {
 		if (error) {
 			*error = ret;
 		}
-		EPRINTF("sceBgftDownloadGetProgress failed: 0x%08X\n", ret);
+		EPRINTF("sceBgftServiceDownloadGetProgress failed: 0x%08X\n", ret);
 		goto err;
 	}
 
@@ -783,7 +741,7 @@ bool bgft_download_find_task_by_content_id(const char* content_id, int sub_type,
 		goto err;
 	}
 
-	tmp_id = ORBIS_BGFT_INVALID_TASK_ID;
+	tmp_id = SCE_BGFT_INVALID_TASK_ID;
 	ret = sceBgftServiceDownloadFindTaskByContentId(content_id, (OrbisBgftTaskSubType)sub_type, &tmp_id);
 	if (ret) {
 		if (error) {

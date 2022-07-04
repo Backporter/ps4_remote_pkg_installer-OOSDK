@@ -1,11 +1,10 @@
 #include "http.h"
-#include "net.h"
 
-#include <orbis/Ssl.h>
 #include <orbis/NpCommon.h>
 #include <orbis/NpUtility.h>
-#include <orbis/Http.h>
 
+#include "net.h"
+#include "ssl.h"
 
 #define HTTP_HEAP_SIZE (1024 * 1024)
 #define SSL_HEAP_SIZE (128 * 1024)
@@ -127,7 +126,7 @@ bool http_get_file_size(const char* url, uint64_t* total_size) {
 	}
 
 							
-	ret = do_request(url, ORBIS_HTTP_METHOD_GET, NULL, 0, NULL, 0, &download_file_cb, &args);
+	ret = do_request(url, ORBIS_METHOD_GET, NULL, 0, NULL, 0, &download_file_cb, &args);
 	if (ret) {
 		goto err;
 	}
@@ -182,7 +181,7 @@ bool http_download_file(const char* url, uint8_t** data, uint64_t* data_size, ui
 		++header_count;
 	}
 
-	ret = do_request(url, ORBIS_HTTP_METHOD_GET, NULL, 0, headers, header_count, &download_file_cb, &args);
+	ret = do_request(url, ORBIS_METHOD_GET, NULL, 0, headers, header_count, &download_file_cb, &args);
 	if (ret) {
 		goto err_data_free;
 	}
@@ -348,12 +347,12 @@ static int download_file_cb(void* arg, int req_id, int status_code, uint64_t con
 	args->status_code = status_code;
 
 	if (req_id < 0) {
-		ret = ORBIS_HTTP_ERROR_INVALID_ID;
+		ret = SCE_HTTP_ERROR_INVALID_ID;
 		goto err;
 	}
 
 	if (!is_good_status(status_code)) {
-		ret = ORBIS_HTTP_ERROR_NOT_FOUND;
+		ret = 404;
 		goto err;
 	}
 
@@ -364,7 +363,7 @@ static int download_file_cb(void* arg, int req_id, int status_code, uint64_t con
 	if (args->data_size == (uint64_t)-1) {
 		/* XXX: if Content-Length is not specified then user must specify it by himself */
 		if (content_length_type != ORBIS_HTTP_CONTENTLEN_EXIST) {
-			ret = ORBIS_HTTP_ERROR_NO_CONTENT_LENGTH;
+			ret = SCE_HTTP_ERROR_NO_CONTENT_LENGTH;
 			goto err;
 		}
 		total_size = content_length;
@@ -374,13 +373,13 @@ static int download_file_cb(void* arg, int req_id, int status_code, uint64_t con
 		total_size = args->data_size;
 	}
 	if (total_size > 0 && !args->chunk) {
-		ret = ORBIS_HTTP_ERROR_INVALID_VALUE;
+		ret = SCE_HTTP_ERROR_INVALID_VALUE;
 		goto err;
 	}
 
 	cur_data = args->data = (uint8_t*)malloc(total_size + 1); /* XXX: allocate one more byte to have valid cstrings */
 	if (!cur_data) {
-		ret = ORBIS_HTTP_ERROR_OUT_OF_MEMORY;
+		ret = SCE_HTTP_ERROR_OUT_OF_MEMORY;
 		goto err_partial_xfer;
 	}
 	memset(cur_data, 0, total_size + 1);
@@ -424,7 +423,7 @@ static int do_request(const char* url, int method, const void* data, size_t data
 	int ret;
 
 	if (!url) {
-		ret = ORBIS_HTTP_ERROR_INVALID_VALUE;
+		ret = SCE_HTTP_ERROR_INVALID_VALUE;
 		goto err;
 	}
 	if (!headers) {
@@ -452,9 +451,9 @@ static int do_request(const char* url, int method, const void* data, size_t data
 	}
 	req_id = ret;
 
-	ssl_flags =  ORBIS_HTTPS_FLAG_SERVER_VERIFY   | ORBIS_HTTPS_FLAG_CLIENT_VERIFY;
-	ssl_flags |= ORBIS_HTTPS_FLAG_CN_CHECK		  | ORBIS_HTTPS_FLAG_KNOWN_CA_CHECK;
-	ssl_flags |= ORBIS_HTTPS_FLAG_NOT_AFTER_CHECK | ORBIS_HTTPS_FLAG_NOT_BEFORE_CHECK;
+	ssl_flags = SCE_HTTPS_FLAG_SERVER_VERIFY | SCE_HTTPS_FLAG_CLIENT_VERIFY;
+	ssl_flags |= SCE_HTTPS_FLAG_CN_CHECK | SCE_HTTPS_FLAG_KNOWN_CA_CHECK;
+	ssl_flags |= SCE_HTTPS_FLAG_NOT_AFTER_CHECK | SCE_HTTPS_FLAG_NOT_BEFORE_CHECK;
 
 	ret = sceHttpsDisableOption(tpl_id, ssl_flags);
 	if (ret) {
@@ -465,7 +464,7 @@ static int do_request(const char* url, int method, const void* data, size_t data
 	}
 
 	for (i = 0; i < header_count; ++i) {
-		ret = sceHttpAddRequestHeader(req_id, headers[i * 2 + 0], headers[i * 2 + 1], ORBIS_HTTP_HEADER_OVERWRITE);
+		ret = sceHttpAddRequestHeader(req_id, headers[i * 2 + 0], headers[i * 2 + 1], SCE_HTTP_HEADER_OVERWRITE);
 		if (ret) {
 			EPRINTF("sceHttpAddRequestHeader failed: 0x%08X\n", ret);
 			goto err_req_delete;

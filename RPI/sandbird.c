@@ -32,39 +32,6 @@
 typedef int sb_Socket;
 #define INVALID_SOCKET -1
 
-typedef struct sb_Buffer sb_Buffer;
-
-struct sb_Buffer { char *s; size_t len, cap; };
-
-struct sb_Stream {
-  int state;                  /* Current state of the stream */
-  sb_Server *server;          /* The server object which owns this stream */
-  char address[46];           /* Remote IP address */
-  time_t init_time;           /* Time the stream was created */
-  time_t last_activity;       /* Time of Last I/O activity on the stream */
-  size_t expected_recv_len;   /* Expected length of the stream's request */
-  size_t data_idx;            /* Index of data section in recv_buf */
-  sb_Socket sockfd;           /* Socket for this streams connection */
-  sb_Buffer recv_buf;         /* Data received from client */
-  sb_Buffer send_buf;         /* Data waiting to be sent to client */
-  int send_fd;                /* File descriptor currently being sent to client */
-  pthread_t thr;              /* Processing thread */
-  sb_Stream *next;            /* Next stream in linked list */
-  sb_Stream *prev;            /* Previous stream in linked list */
-};
-
-struct sb_Server {
-  sb_Stream *streams;         /* Linked list of all streams */
-  sb_Handler handler;         /* Event handler callback function */
-  sb_Socket sockfd;           /* Listeneing server socket */
-  void *udata;                /* User data value passed to all events */
-  time_t now;                 /* The current time */
-  time_t timeout;             /* Stream no-activity timeout */
-  time_t max_lifetime;        /* Maximum time a stream can exist */
-  size_t max_request_size;    /* Maximum request size in bytes */
-  pthread_mutex_t stream_mtx; /* Mutex to lock stream access */
-};
-
 enum {
   STATE_RECEIVING_HEADER,
   STATE_RECEIVING_REQUEST,
@@ -762,7 +729,7 @@ int sb_get_var(sb_Stream *st, const char *name, char *dst, size_t len) {
 }
 
 
-char *sb_get_content_data(sb_Stream *st, size_t *len) {
+char *sb_get_content_data_bak(sb_Stream *st, size_t *len) {
   if (st->data_idx) {
     if (len) {
       *len = st->expected_recv_len - st->data_idx;

@@ -1,8 +1,6 @@
 #include "net.h"
 
 #include <orbis/libkernel.h>
-
-#include <orbis/Net.h>
 #include <orbis/NetCtl.h>
 
 #define NET_HEAP_SIZE (1 * 1024 * 1024)
