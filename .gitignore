@@ -3,3 +3,5 @@ RPI/x64
 pkg.gp4
 eboot.bin
 sce_sys/param.sfo
+compile_commands.json
+.cache

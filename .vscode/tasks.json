@@ -4,9 +4,9 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Build (MacOS)",
+      "label": "Build",
       "type": "shell",
-      "command": "make clean && sudo OO_PS4_TOOLCHAIN=/opt/OpenOrbis-PS4-Toolchain make",
+      "command": "make clean && make",
       "problemMatcher": [],
       "group": {
         "kind": "build",
